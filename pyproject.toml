@@ -1,0 +1,9 @@
+[project]
+name = "cosmos-agi"
+version = "0.1.0"
+description = "An open-source AGI prototype"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["cosmos_agi/tests"]
+pythonpath = ["."]
