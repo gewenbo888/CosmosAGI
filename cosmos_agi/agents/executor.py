@@ -55,7 +55,8 @@ Output format:
 
         try:
             result = self.call_llm_json(prompt, state)
-            subtask.result = result.get("result", str(result))
+            raw_result = result.get("result", result)
+            subtask.result = raw_result if isinstance(raw_result, str) else str(raw_result)
             subtask.status = "done"
 
             state.observations.append(

@@ -47,6 +47,71 @@ def completion(
     return content
 
 
+def _extract_json(raw: str) -> dict:
+    """Extract JSON from LLM output, handling common wrappers.
+
+    Handles:
+    - Raw JSON
+    - Markdown code fences (```json ... ```)
+    - DeepSeek-style <think>...</think> preamble
+    - Leading/trailing prose around a JSON object
+    """
+    import re
+
+    text = raw.strip()
+
+    # Strip <think>...</think> blocks (DeepSeek R1)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+    # Strip markdown code fences
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = lines[1:]  # remove opening fence
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Find the first { ... } or [ ... ] block via brace matching
+    for start_char, end_char in [("{", "}"), ("[", "]")]:
+        start = text.find(start_char)
+        if start == -1:
+            continue
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"' and not escape:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == start_char:
+                depth += 1
+            elif ch == end_char:
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start:i + 1]
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break
+
+    raise json.JSONDecodeError("No valid JSON found in LLM response", text, 0)
+
+
 def completion_json(
     messages: list[dict[str, str]],
     config: LLMConfig | None = None,
@@ -54,14 +119,4 @@ def completion_json(
 ) -> dict:
     """Call LLM and parse the response as JSON."""
     raw = completion(messages, config, **kwargs)
-
-    # Strip markdown code fences if present
-    text = raw.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = lines[1:]  # remove opening fence
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines)
-
-    return json.loads(text)
+    return _extract_json(raw)

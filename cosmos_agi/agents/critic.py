@@ -71,7 +71,8 @@ Evaluate: Did we successfully complete the task? What is the final answer?"""
             state.reflections.append(reflection)
 
             if reflection.success and reflection.confidence >= 0.7:
-                state.final_answer = result.get("final_answer", reflection.reasoning)
+                raw_answer = result.get("final_answer", reflection.reasoning)
+                state.final_answer = raw_answer if isinstance(raw_answer, str) else str(raw_answer)
                 state.phase = AgentPhase.COMPLETE
                 logger.info("Critic: task COMPLETE (confidence=%.2f)", reflection.confidence)
             elif state.iteration >= state.max_iterations:
