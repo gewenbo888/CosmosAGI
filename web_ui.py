@@ -19,6 +19,34 @@ from cosmos_agi.core.graph import run_agent_loop
 # Configure
 settings.safety.enable_human_in_the_loop = False
 
+# Load NVIDIA API key from hermes config
+_hermes_env = Path.home() / ".hermes" / ".env"
+if _hermes_env.exists():
+    for line in _hermes_env.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("#"):
+            continue
+        for prefix in ("OPENAI_API_KEY=", "NVIDIA_API_KEY=", "NVIDIA_NIM_API_KEY="):
+            if line.startswith(prefix):
+                _key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if _key and _key.startswith("nvapi-"):
+                    settings.llm.api_key = _key
+                    break
+        if settings.llm.api_key:
+            break
+
+# Fallback: try openclaw config
+if not settings.llm.api_key:
+    _nvidia_json = Path.home() / ".openclaw" / "config" / "nvidia.json"
+    if _nvidia_json.exists():
+        try:
+            _cfg = json.loads(_nvidia_json.read_text())
+            _key = _cfg.get("api_key") or _cfg.get("apiKey", "")
+            if _key:
+                settings.llm.api_key = _key
+        except Exception:
+            pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -235,9 +263,10 @@ HTML = """
     <label>
       Model:
       <select id="modelSelect">
+        <option value="nvidia/moonshotai/kimi-k2-instruct" selected>Kimi K2 Instruct (NVIDIA)</option>
+        <option value="nvidia/moonshotai/Kimi-K2.5">Kimi K2.5 (NVIDIA)</option>
         <option value="ollama/deepseek-r1:14b">DeepSeek R1 14B (local)</option>
         <option value="ollama/deepseek-r1:32b">DeepSeek R1 32B (local)</option>
-        <option value="ollama/deepseek-r1:70b">DeepSeek R1 70B (local)</option>
         <option value="claude-sonnet-4-20250514">Claude Sonnet (API key)</option>
         <option value="gpt-4o">GPT-4o (API key)</option>
       </select>
@@ -378,18 +407,29 @@ def index():
 def api_run():
     data = request.json
     task_text = data.get("task", "")
-    model = data.get("model", "ollama/deepseek-r1:14b")
+    model_raw = data.get("model", "nvidia/moonshotai/kimi-k2-instruct")
     team_mode = data.get("team_mode", False)
     max_iterations = data.get("max_iterations", 3)
 
     if not task_text:
         return jsonify({"error": "No task provided"}), 400
 
+    # Parse model string: "nvidia/model_name" or "ollama/model_name" or plain model
+    if model_raw.startswith("nvidia/"):
+        model = model_raw[len("nvidia/"):]
+        provider = "nvidia"
+    elif model_raw.startswith("ollama/"):
+        model = model_raw[len("ollama/"):]
+        provider = "ollama"
+    else:
+        model = model_raw
+        provider = "litellm"
+
     task_id = f"task_{int(time.time())}_{len(tasks)}"
     tasks[task_id] = {
         "status": "running",
         "task": task_text,
-        "model": model,
+        "model": model_raw,
         "result": None,
         "error": None,
         "iterations": 0,
@@ -399,7 +439,9 @@ def api_run():
 
     def run_in_background():
         try:
+            from cosmos_agi.config.settings import LLMProvider
             settings.llm.model = model
+            settings.llm.provider = LLMProvider(provider)
             state = run_agent_loop(
                 task_text,
                 max_iterations=max_iterations,

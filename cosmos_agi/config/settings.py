@@ -8,12 +8,13 @@ class LLMProvider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     OLLAMA = "ollama"
+    NVIDIA = "nvidia"
     LITELLM = "litellm"
 
 
 class LLMConfig(BaseModel):
-    provider: LLMProvider = LLMProvider.LITELLM
-    model: str = "claude-sonnet-4-20250514"
+    provider: LLMProvider = LLMProvider.NVIDIA
+    model: str = "moonshotai/kimi-k2-instruct"
     temperature: float = 0.7
     max_tokens: int = 4096
     api_key: str | None = None

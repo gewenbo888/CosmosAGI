@@ -25,8 +25,15 @@ def completion(
         config = settings.llm
 
     model = config.model
+    api_key = config.api_key
+    api_base = config.base_url
+
     if config.provider.value == "ollama":
         model = f"ollama/{config.model}"
+    elif config.provider.value == "nvidia":
+        # NVIDIA API is OpenAI-compatible — use openai/ prefix for litellm
+        model = f"openai/{config.model}"
+        api_base = api_base or "https://integrate.api.nvidia.com/v1"
 
     params: dict[str, Any] = {
         "model": model,
@@ -35,10 +42,10 @@ def completion(
         "max_tokens": config.max_tokens,
         **kwargs,
     }
-    if config.api_key:
-        params["api_key"] = config.api_key
-    if config.base_url:
-        params["api_base"] = config.base_url
+    if api_key:
+        params["api_key"] = api_key
+    if api_base:
+        params["api_base"] = api_base
 
     logger.debug("LLM call: model=%s messages=%d", model, len(messages))
     response = litellm.completion(**params)
